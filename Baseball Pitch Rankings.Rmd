@@ -1,0 +1,335 @@
+---
+title: " Pitcher Rankings Baseball"
+
+output:
+  html_document: default
+  pdf_document: default
+  
+
+ 
+  
+
+  
+
+---
+![](C:/Users/gsorensen/Pictures/ncaa-logo-mats-10.png){width=150px}
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+
+
+library(lubridate)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(sqldf)
+library(DT)
+library(data.table)
+
+
+
+
+## Set path for your working location
+setwd("C:/Users/gsorensen/Desktop")
+
+
+#read in dataset
+OG_set <- read.csv('PitcherLeaderboardData.csv')
+
+#absolute values for break
+OG_set$ABSBrk_x <- abs(OG_set$brk_x)
+OG_set$ABSBrk_z <- abs(OG_set$brk_z)
+
+
+#pull out only by pitch type
+FB <- OG_set %>%  filter(pitch_type == 'FB')
+CH <- OG_set %>%  filter(pitch_type == 'CH')
+BRK <- OG_set %>%  filter(pitch_type == 'BRK')
+
+
+#Group by name and get Max velo 
+FB_max <- FB %>% group_by(Name,PITCHER_THROWS) %>% summarise(velo_MAX = max(velo))
+
+#sort by max velo
+FB_max <- FB_max[order(FB_max$velo_MAX, decreasing = TRUE),]
+
+BRK <- na.omit(BRK)
+FB<- na.omit(FB)
+CH <- na.omit(CH)
+
+#Group by name and get Avg fastballs
+FB_Avg <- FB %>% group_by(Name,PITCHER_THROWS) %>% summarise(velo_AVGFB = mean(velo),Spin_AVGFB = mean(spin_rate),ext_AVGFB = mean(extension), ABSBrkx_AvgFB = mean(ABSBrk_x),ABSBrkz_AvgFB = mean(ABSBrk_z))
+CH_Avg <- CH %>% group_by(Name) %>% summarise(velo_AVGCH = mean(velo),Spin_AVGCH = mean(spin_rate),ext_AVGCH = mean(extension),ABSBrkx_AvgCH = mean(ABSBrk_x),ABSBrkz_AvgCH = mean(ABSBrk_z))
+BRK_Avg <- BRK %>% group_by(Name) %>% summarise(velo_AVGBRK = mean(velo),Spin_AVGBRK = mean(spin_rate),ext_AVGBRK = mean(extension),ABSBrkx_AvgBRK = mean(ABSBrk_x),ABSBrkz_AvgBRK = mean(ABSBrk_z))
+
+
+#sort by Avg Velo  
+FB_Avg <- FB_Avg[order(FB_Avg$velo_AVGFB, decreasing = TRUE),]   
+
+
+#create rank column
+FB_max$rank_MaxFB <- rank(FB_max$velo_MAX)
+FB_Avg$rank_AvgVeloFB <- rank(FB_Avg$velo_AVGFB) 
+FB_Avg$rank_AvgSpinFB <- rank(FB_Avg$Spin_AVGFB)
+CH_Avg$rank_AvgSpinCH <- rev(rank(CH_Avg$Spin_AVGCH))
+BRK_Avg$rank_AvgSpinBRK <- rank(BRK_Avg$Spin_AVGBRK)
+FB_Avg$rank_AvgextFB <- rank(FB_Avg$ext_AVGFB)
+CH_Avg$rank_AvgextCH <- rank(CH_Avg$ext_AVGCH)
+BRK_Avg$rank_AvgextBRK <- rank(BRK_Avg$ext_AVGBRK)
+
+FB_Avg$rank_AvgbrkxFB <- rank(FB_Avg$ABSBrkx_AvgFB) 
+FB_Avg$rank_AvgbrkzFB <- rank(FB_Avg$ABSBrkz_AvgFB) 
+
+CH_Avg$rank_AvgbrkxCH <- rank(CH_Avg$ABSBrkx_AvgCH)
+CH_Avg$rank_AvgbrkzCH <- rank(CH_Avg$ABSBrkz_AvgCH) 
+
+BRK_Avg$rank_AvgbrkxBRK <- rank(BRK_Avg$ABSBrkx_AvgBRK)
+BRK_Avg$rank_AvgbrkzBRK <- rank(BRK_Avg$ABSBrkz_AvgBRK) 
+
+
+#Join both max and avg
+FB_list = merge(x = FB_max, y = FB_Avg, by = "Name", all.x = TRUE)
+
+#assign weights to rankings 
+#Velo_list$Ranking <- Velo_list$rank_Avg*.2 + Velo_list$rank_Max*.8
+FB_list$VeloRanking <- (FB_list$rank_AvgVeloFB*.1) + (FB_list$rank_MaxFB*.9)
+#Velo_list$Ranking <- Velo_list$rank_Avg*.3 + Velo_list$rank_Max*.7
+
+#sort list by final rankings
+FB_list <- FB_list[order(FB_list$VeloRanking, decreasing = TRUE),]   
+
+
+#Get top 15 Velo pitchers
+Final_Velo = top_n(FB_list,15)
+
+##-------------------------------------#SpinRate-----------------------------##
+
+
+
+
+
+#combine fastball table and changeup table
+
+Join_first = merge(x = FB_Avg, y = CH_Avg, by = "Name", all.x = TRUE)
+
+#combine fb+ch with breaking ball table
+
+Join_list = merge(x = Join_first, y = BRK_Avg, by = "Name", all.x = TRUE)
+
+#give no ranking where change up is NA
+Join_list$rank_AvgSpinCH[is.na(Join_list$rank_AvgSpinCH)] <- 0
+Join_list$rank_AvgextCH[is.na(Join_list$rank_AvgextCH)] <- 0
+
+Join_list$rank_AvgbrkxCH[is.na(Join_list$rank_AvgbrkxCH)] <- 0
+Join_list$rank_AvgbrkzCH[is.na(Join_list$rank_AvgbrkzCH)] <- 0
+
+
+
+
+#assign weights to rankings 
+Join_list$SpinRateRanking <- (Join_list$rank_AvgSpinCH*.3) + (Join_list$rank_AvgSpinFB*.3)+(Join_list$rank_AvgSpinBRK*.4)
+
+#sort list by final rankings
+Join_list <- Join_list[order(Join_list$SpinRateRanking, decreasing = TRUE),]  
+
+Final_SpinRate = top_n(Join_list,15)
+
+
+
+##-------------------------------------#extension-----------------------------##
+
+
+#assign weights to rankings 
+Join_list$ExtRanking <- (Join_list$rank_AvgextFB*.35) + (Join_list$rank_AvgextCH*.325)+(Join_list$rank_AvgextBRK*.325)
+
+#sort list by final rankings
+Join_list <- Join_list[order(Join_list$ExtRanking, decreasing = TRUE),]  
+
+Final_Extention = top_n(Join_list,15)
+
+
+
+
+##-------------------------------------#Cleanup-----------------------------##
+
+Final_Velo$URank <- rev(order(Final_Velo$VeloRanking))
+
+Final_VeloDisplay <- subset(Final_Velo, select= c('Name','PITCHER_THROWS.x','URank') )
+
+Final_SpinRate$URank <- rev(order(Final_SpinRate$SpinRateRanking))
+Final_SpinRateDisplay <- subset(Final_SpinRate, select= c('Name','PITCHER_THROWS','URank') )
+
+
+Final_Extention$URank <- rev(order(Final_Extention$ExtRanking))
+Final_ExtentionDisplay <- subset(Final_Extention, select= c('Name','PITCHER_THROWS','URank') )
+
+
+##-------------------------------------#BestPitcher-----------------------------
+
+#Diffrence of Avg FB to Avg CH Velo
+Join_list$DeltaFB_CH <- Join_list$velo_AVGFB-Join_list$velo_AVGCH
+#Diffrence of Avg FB to Avg BRK Velo
+Join_list$DeltaFB_BRK <- Join_list$velo_AVGFB-Join_list$velo_AVGBRK
+
+#create rank column for delta
+Join_list$rank_DeltaFB_CH<- rank(Join_list$DeltaFB_CH) 
+Join_list$rank_DeltaFB_BRK <- rank(Join_list$DeltaFB_BRK) 
+
+#give no ranking where change up is NA
+Join_list$rank_DeltaFB_CH[is.na(Join_list$rank_DeltaFB_CH)] <- 0
+
+
+#create ultimate break x and z
+Join_list$ultimateBrkX <- Join_list$rank_AvgbrkxBRK*.4 + Join_list$rank_AvgbrkxCH*.3+ Join_list$rank_AvgbrkxFB*.3
+
+Join_list$ultimateBrkZ <- Join_list$rank_AvgbrkzBRK*.4 + Join_list$rank_AvgbrkzCH*.3+ Join_list$rank_AvgbrkzFB*.3
+
+
+
+#create rank column for ultimate break columns
+Join_list$rank_ultimatebrkx<- rank(Join_list$ultimateBrkX) 
+Join_list$rank_ultimatebrkz <- rank(Join_list$ultimateBrkZ,ties.method = "max") 
+
+
+#data prep to join Velo table
+FBJoin <- subset(FB_list,select= c('Name','VeloRanking'))
+
+FBJoin$VeloRank <- rank(FBJoin$VeloRanking)
+
+
+
+
+FBJoin <- subset(FBJoin,select= c('Name','VeloRank'))
+
+
+
+#join Velo table with master join table
+Join_list <- merge(x = Join_list, y = FBJoin, by = "Name", all.x = TRUE)
+
+
+
+#wieghts asigned to pitcher values
+Join_list$ultimatePitcher <- Join_list$SpinRateRanking*.3 +Join_list$VeloRank *.28 + Join_list$ExtRanking*.15 +Join_list$rank_ultimatebrkx*.05 +Join_list$rank_ultimatebrkz*.05+Join_list$rank_DeltaFB_BRK*.05+Join_list$rank_DeltaFB_CH*.1
+
+#create left hand bonus
+Join_list$ultimatePitcher2 <- 0
+Join_list$ultimatePitcher2[Join_list$PITCHER_THROWS == "L"] <- .02
+
+
+
+#get final pitcher value
+Join_list$ultimatePitcher <- Join_list$ultimatePitcher + Join_list$ultimatePitcher2
+
+
+#rank final best pitchers
+Join_list$rank_ultimatePitcher <- rank(Join_list$ultimatePitcher)
+
+
+#sort list by final rankings
+Join_list <- Join_list[order(Join_list$rank_ultimatePitcher, decreasing = TRUE),]  
+
+Final_BestPitcher = top_n(Join_list,15)
+
+
+Final_BestPitcher$URank <- rev(order(Final_BestPitcher$rank_ultimatePitcher))
+Final_BestPitcherDisplay <- subset(Final_BestPitcher, select= c('Name','PITCHER_THROWS','URank') )
+
+#-------------FinalDatasets-----------------------#
+#print(Final_BestPitcherDisplay)
+#print(Final_ExtentionDisplay)
+#print(Final_SpinRateDisplay)
+#print(Final_VeloDisplay)
+
+####CleanupPart2#################
+
+Final_VeloDisplay <- subset(Final_Velo,select= c('Name','PITCHER_THROWS.x','URank','velo_MAX','velo_AVGFB') )
+setnames(Final_VeloDisplay, "PITCHER_THROWS.x", "Handed")
+setnames(Final_VeloDisplay, "URank", "Rank")
+
+Final_SpinRateDisplay <- subset(Final_SpinRate, select= c('Name','PITCHER_THROWS','URank','Spin_AVGFB','Spin_AVGBRK','Spin_AVGCH'))
+
+
+setnames(Final_SpinRateDisplay, "PITCHER_THROWS", "Handed")
+setnames(Final_SpinRateDisplay, "URank", "Rank")
+
+Final_ExtentionDisplay <- subset(Final_Extention, select = c('Name','PITCHER_THROWS','URank','ext_AVGFB','ext_AVGCH','ext_AVGBRK'))
+
+setnames(Final_ExtentionDisplay, "PITCHER_THROWS", "Handed")
+setnames(Final_ExtentionDisplay, "URank", "Rank")
+
+Final_BestPitcherDisplay <- subset(Final_BestPitcher,select = c('Name','PITCHER_THROWS','URank','ultimatePitcher'))
+
+setnames(Final_BestPitcherDisplay, "PITCHER_THROWS", "Handed")
+setnames(Final_BestPitcherDisplay, "URank", "Rank")
+setnames(Final_BestPitcherDisplay, "ultimatePitcher", "Ultimate Pitcher Rating")
+
+
+
+```
+## Top 15 Pitchers by Velocity
+
+ 
+ 
+
+* This ranking is composed of:
+  + average faseball veloicty 90%
+  + maximum fastball veloicty 10%\
+  
+velo_Max = Highest FB velocity recorded by each pitcher\
+velo_AVGFB = Average of all FB veloicty recorded by each pitcher
+  
+  
+  
+
+```{R echo = FALSE}
+DT::datatable(Final_VeloDisplay,options = list(pageLength = 15))
+
+```
+
+## Top 15 Pitchers by Spin Rate
+
+* This ranking is composed of:
+  + Average Faseball Spin Rate 30%
+  + Average change Up Spin Rate 30%
+  + Average Breaking Ball Spin Rate 40%\
+  
+Spin_AVGFB = Average of all FB spin rate recorded by each pitcher\
+Spin_AVGBRK = Average of all BRK spin rate recorded by each pitcher\
+Spin_AVGCH = Average of all CH spin rate recorded by each pitcher
+  
+
+
+```{R echo = FALSE}
+DT::datatable(Final_SpinRateDisplay,options = list(pageLength = 15))
+
+```
+
+## Top 15 Pitchers by Extension
+* This ranking is composed of:
+  + Average Faseball Extension 35%
+  + Average change Up Extension 32.5%
+  + Average Breaking Ball Extension 32.5%\
+  
+ext_AVGFB = Average of all FB extension recorded by each pitcher\
+ext_AVGBRK = Average of all BRK extension recorded by each pitcher\
+ext_AVGCH = Average of all CH extension recorded by each pitcher
+
+```{R echo = FALSE}
+DT::datatable(Final_ExtentionDisplay,options = list(pageLength = 15))
+
+```
+
+## Top 15 Pitchers Overall
+
+This ranking is composed of the Rankings above and the display chart below.\
+
+Ulimate Pitcher Rating = This is the combine score of the graph below for each pitcher
+
+```{R echo = FALSE}
+DT::datatable(Final_BestPitcherDisplay,options = list(pageLength = 15))
+
+```
+
+## Top Pitcher Breakdown
+![](C:/Users/gsorensen/Pictures/org.png)
